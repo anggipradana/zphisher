@@ -22,6 +22,8 @@
 
 <p align="center"><b>A beginners friendly, Automated phishing tool with 30+ templates.</b></p>
 
+> **This is a fork.** It contains cloudflared reliability fixes over upstream: forced HTTP/2 over TCP + IPv4 (avoids Cloudflare Error 1033 behind NAT/VM), tunnel URL polling instead of a fixed wait, detached tunnel/PHP server (survives Ctrl+C), and a working shortener fallback. Install by cloning **this** repository, not upstream.
+
 ##
 
 <h3><p align="center">Disclaimer</p></h3>
@@ -53,7 +55,7 @@ It only demonstrates "how phishing works". <b>You shall not misuse the informati
 
 - Just, Clone this repository -
   ```
-  git clone --depth=1 https://github.com/htr-tech/zphisher.git
+  git clone --depth=1 https://github.com/anggipradana/zphisher.git
   ```
 
 - Now go to cloned directory and run `zphisher.sh` -
@@ -79,12 +81,14 @@ $ zphisher
 ##
 
 <p align="left">
-  <a href="https://shell.cloud.google.com/cloudshell/open?cloudshell_git_repo=https://github.com/htr-tech/zphisher.git&tutorial=README.md" target="_blank"><img src="https://gstatic.com/cloudssh/images/open-btn.svg"></a>
+  <a href="https://shell.cloud.google.com/cloudshell/open?cloudshell_git_repo=https://github.com/anggipradana/zphisher.git&tutorial=README.md" target="_blank"><img src="https://gstatic.com/cloudssh/images/open-btn.svg"></a>
 </p>
 
 ##
 
 ### Installation via ".deb" file
+
+> Note: `.deb` builds are published by upstream and **do not include this fork's fixes**. For the fixed version use the clone install above.
 
 - Download `.deb` files from the [**Latest Release**](https://github.com/htr-tech/zphisher/releases/latest)
 - If you are using ***termux*** then download the `*_termux.deb`
@@ -102,6 +106,8 @@ $ zphisher
 ##
 
 ### Run on Docker
+
+> Note: the published images are built from upstream and **do not include this fork's fixes**.
 
 - Docker Image Mirror:
   - **DockerHub** : 
