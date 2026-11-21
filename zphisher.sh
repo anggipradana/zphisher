@@ -90,7 +90,7 @@
 ##   TheLinuxChoice - https://twitter.com/linux_choice
 
 
-__version__="2.3.6"
+__version__="2.3.7"
 
 ## DEFAULT HOST & PORT
 HOST='127.0.0.1'
@@ -309,6 +309,7 @@ download() {
 		chmod +x .server/$output > /dev/null 2>&1
 		rm -rf "$file"
 	else
+		rm -f "$file"
 		echo -e "\n${RED}[${WHITE}!${RED}]${RED} Error occured while downloading ${output}."
 		{ reset_color; exit 1; }
 	fi
